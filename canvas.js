@@ -2,9 +2,9 @@
  * Created by xuan on 15-5-11.
  */
 var img = [
-    'images/4a64afb844d073c7ed28769df644a0e7.jpg',
-    'images/c57641e644cdf7a65d9308adaf7315ee.jpg',
-    'images/eb5c473900ed8f4778cc4ed7ed9044d9.jpg'
+    'images/1.jpg',
+    'images/2.jpg',
+    'images/3.jpg'
 ];
 
 $(function () {
@@ -15,16 +15,17 @@ $(function () {
             imgsInLab = [],
             currentMiddleLine = 0,
             totalVirtualWidth = 0;
-        this.buildImageObject = function buildImageObject(imgEl) {
+        this.buildImageObject = function buildImageObject(imgEl, id) {
             return {
+                id: id,
                 el: imgEl,
                 width: 400,
                 height: 300,
                 relPosition: 0
             }
         };
-        this.insertPicture = function insertPicture(imgEl) {
-            var imgObj = this.buildImageObject(imgEl);
+        this.insertPicture = function insertPicture(imgEl, id) {
+            var imgObj = this.buildImageObject(imgEl, id);
             if (imgObj)
                 imgsInLab.push(imgObj);
             this.refreshPosition();
@@ -37,42 +38,86 @@ $(function () {
             }
             totalVirtualWidth = rp;
         };
-        function drawImgObj(imgObj, x, y, scale) {
+        function drawImgObj(imgObj, x, y, scale, higlight) {
+            ctx.save();
+            ctx.globalAlpha = higlight ? 1 : scale * scale;
             ctx.drawImage(imgObj.el, x, y, imgObj.width * scale, imgObj.height * scale);
+
+            if (higlight) {
+                for (var offset = 5; offset >= 0; --offset) {
+                    ctx.globalAlpha = (11 - offset) / 20;
+                    ctx.strokeStyle = "#0000ff";
+                    ctx.strokeRect(x - offset, y - offset, imgObj.width * scale + 2 * offset, imgObj.height * scale + 2 * offset);
+                }
+            }
+            ctx.restore();
         }
 
         function drawPictureLab() {
-            ctx.globalAlpha = 1;
             if (imgsInLab.length == 0)
                 return;
-            var scale = 1;
-            var iset = imgsInLab.slice(0, imgsInLab.length);
+            var i,
+                scale = 1,
+                imgPosLeft,
+                iset = imgsInLab.slice(0, imgsInLab.length);
             iset.sort(function (a, b) {
                 return Math.abs(a.relPosition - currentMiddleLine) -
                     Math.abs(b.relPosition - currentMiddleLine);
             });
-            for (var i = iset.length - 1; i >= 0; --i) {
+
+            for (i = iset.length - 1; i >= 0; --i) {
                 scale = 1 - (Math.abs(iset[i].relPosition - currentMiddleLine) / totalVirtualWidth);
+                imgPosLeft = (canvasEl.width - iset[i].width ) / 2 +
+                (iset[i].relPosition - currentMiddleLine) * 0.25 / (scale * scale);
+                if (imgPosLeft + iset[i].width < 0) {
+                    iset[i].requeue = true;
+                }
                 drawImgObj(
                     iset[i],
-                    ((iset[i].relPosition - currentMiddleLine) / totalVirtualWidth + 0.5) * 800,
+                    imgPosLeft,
+                    // ((iset[i].relPosition - currentMiddleLine) / totalVirtualWidth + 0.5) * 800,
                     (canvasEl.height - iset[i].height * scale) / 2,
-                    scale);
+                    scale,
+                    scale > 0.9
+                );
+            }
+            var requeue_list = [];
+            imgsInLab = imgsInLab.filter(function (i) {
+                if (i.requeue) {
+                    if (delete i.requeue) {
+                        requeue_list.push(i);
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            if (requeue_list.length > 0) {
+                var adjust;
+                adjust = imgsInLab[0].relPosition;
+                for (i = 1; i < imgsInLab.length; i++) {
+                    if (imgsInLab[i].relPosition < adjust) {
+                        adjust = imgsInLab[i].relPosition;
+                    }
+                }
+                imgsInLab.push.apply(imgsInLab, requeue_list);
+                this.refreshPosition();
+                currentMiddleLine -= adjust;
             }
         }
 
-        function draw() {
+        this.draw = function draw() {
             currentMiddleLine++;
-            ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
-            ctx.save();
             ctx.globalAlpha = 1;
 
-            drawPictureLab();
+            ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+            ctx.save();
+            drawPictureLab.apply(this);
             ctx.restore();
-            requestAnimationFrame(draw);
-        }
-
-        requestAnimationFrame(draw);
+            requestAnimationFrame(this.draw);
+        };
+        this.draw = this.draw.bind(this);
+        requestAnimationFrame(this.draw);
     }
 
     var canvasEl = document.getElementById('canvas');
@@ -85,7 +130,7 @@ $(function () {
     function insert_picture(src) {
         var imgEl = document.createElement('img');
         $(imgEl).on('load', function () {
-            lab.insertPicture(imgEl);
+            lab.insertPicture(imgEl, src);
         });
         $(imgEl).on('error', function () {
             alert(src + 'fail');
